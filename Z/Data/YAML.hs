@@ -45,8 +45,8 @@ module Z.Data.YAML
   , encodeValueToFile
   , encode
   , encodeValue
-  , YAMLParseError(..)
   , YAMLParseException(..)
+  , YAMLParseError(..)
   -- * Streaming parser and builder
   , parseSingleDoucment
   , parseAllDocuments
@@ -77,7 +77,6 @@ import qualified Z.Data.Builder as B
 import           Z.Data.CBytes          (CBytes)
 import           Z.Data.YAML.FFI
 import           Z.IO
-import           System.IO.Unsafe
 
 -- | Decode a 'FromValue' instance from file.
 decodeFromFile :: (HasCallStack, FromValue a) => CBytes -> IO a
@@ -91,15 +90,15 @@ decodeValueFromFile :: HasCallStack => CBytes -> IO Value
 decodeValueFromFile p = withResource (initFileParser p) parseSingleDoucment
 
 -- | Decode a 'FromValue' instance from bytes.
-decode :: FromValue a => V.Bytes -> Either YAMLParseException a
-decode bs = unsafePerformIO . try . withResource (initParser bs) $ \ src -> do
+decode :: HasCallStack => FromValue a => V.Bytes -> IO a
+decode bs = withResource (initParser bs) $ \ src -> do
     r <- convert' <$> parseSingleDoucment src
     case r of Left e -> throwIO (YAMLConvertException e callStack)
               Right v -> return v
 
 -- | Decode a 'Value' from bytes.
-decodeValue :: V.Bytes -> Either YAMLParseException Value
-decodeValue bs = unsafePerformIO . try $ withResource (initParser bs) parseSingleDoucment
+decodeValue :: HasCallStack => V.Bytes -> IO Value
+decodeValue bs = withResource (initParser bs) parseSingleDoucment
 
 -- | Encode a 'ToValue' instance to file.
 encodeToFile :: (HasCallStack, ToValue a) => YAMLFormatOpts -> CBytes -> a -> IO ()
@@ -112,14 +111,14 @@ encodeValueToFile opts p v = withResource (initFileEmitter opts p) $ \ sink ->
     buildSingleDocument sink v
 
 -- | Encode a 'ToValue' instance as UTF8 text.
-encode :: (HasCallStack, ToValue a) => YAMLFormatOpts -> a -> T.Text
-encode opts x = unsafePerformIO . withResource (initEmitter opts) $ \ (p, sink) -> do
+encode :: (HasCallStack, ToValue a) => YAMLFormatOpts -> a -> IO T.Text
+encode opts x = withResource (initEmitter opts) $ \ (p, sink) -> do
     buildSingleDocument sink (toValue x)
     getEmitterResult p
 
 -- | Encode a 'Value' as UTF8 text.
-encodeValue :: HasCallStack => YAMLFormatOpts -> Value -> T.Text
-encodeValue opts v = unsafePerformIO . withResource (initEmitter opts) $ \ (p, sink) -> do
+encodeValue :: HasCallStack => YAMLFormatOpts -> Value -> IO T.Text
+encodeValue opts v = withResource (initEmitter opts) $ \ (p, sink) -> do
     buildSingleDocument sink v
     getEmitterResult p
 
