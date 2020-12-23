@@ -23,7 +23,7 @@ data Person = Person
     , magic :: Bool
     }
   deriving (Show, Generic)
-  deriving anyclass (FromValue, ToValue)
+  deriving anyclass (YAML.FromValue, YAML.ToValue)
 
 > YAML.decode @[Person] "- name: Erik Weisz\n  age: 52\n  magic: True\n"
 > Right [Person {name = "Erik Weisz", age = 52, magic = True}]

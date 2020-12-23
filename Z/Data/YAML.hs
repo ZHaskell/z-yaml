@@ -11,7 +11,7 @@ Simple YAML codec using <https://libyaml.docsforge.com/ libYAML> and JSON's 'Fro
 The design choice to make things as simple as possible since YAML is a complex format, there're some limitations using this approach:
 
 * Does not support complex keys.
-* Dose not support multiple doucments in one file.
+* Does not support multiple doucments in one file.
 
 @
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass, DerivingStrategies, TypeApplication #-}
@@ -26,9 +26,9 @@ data Person = Person
     , magic :: Bool
     }
   deriving (Show, Generic)
-  deriving anyclass (FromValue, ToValue)
+  deriving anyclass (YAML.FromValue, YAML.ToValue)
 
-> YAML.decode @[Person] "- name: Erik Weisz\n  age: 52\n  magic: True\n"
+> YAML.decode @[Person] "- name: Erik Weisz\\n  age: 52\\n  magic: True\\n"
 > Right [Person {name = "Erik Weisz", age = 52, magic = True}]
 @
 
@@ -36,7 +36,7 @@ data Person = Person
 
 
 module Z.Data.YAML
-  ( -- * decode and encode using YAML
+  ( -- * Decode and encode using YAML
     decodeFromFile
   , decodeValueFromFile
   , decode
@@ -47,12 +47,12 @@ module Z.Data.YAML
   , encodeValue
   , YAMLParseError(..)
   , YAMLParseException(..)
-  -- * streaming parser and builder
+  -- * Streaming parser and builder
   , parseSingleDoucment
   , parseAllDocuments
   , buildSingleDocument
   , buildValue
-  -- * re-exports
+  -- * Re-Exports
   , FromValue(..)
   , ToValue(..)
   , Value(..)
@@ -126,10 +126,10 @@ encodeValue opts v = unsafePerformIO . withResource (initEmitter opts) $ \ (p, s
 --------------------------------------------------------------------------------
 
 data YAMLParseError
-    = UnknownAlias Mark Mark Anchor
+    = UnknownAlias MarkedEvent
     | UnexpectedEvent MarkedEvent
-    | NonStringKey Mark Mark T.Text
-    | NonStringKeyAlias Mark Mark Anchor
+    | NonStringKey MarkedEvent
+    | NonStringKeyAlias MarkedEvent
     | UnexpectedEventEnd
   deriving (Show, Eq)
 
@@ -194,14 +194,14 @@ defineAnchor key value = unless (T.null key) $ do
     (_, mref) <- ask
     liftIO $ modifyIORef' mref (HM.insert key value)
 
-lookupAlias :: Mark -> Mark -> T.Text -> ParserIO Value
-lookupAlias startMark endMark key = do
+lookupAlias :: MarkedEvent -> T.Text -> ParserIO Value
+lookupAlias me key = do
     (_, mref) <- ask
     liftIO $ do
         m <- readIORef mref
         case HM.lookup key m of
             Just v -> return v
-            _ -> throwIO (UnknownAlias startMark endMark key)
+            _ -> throwIO (UnknownAlias me)
 
 textToValue :: ScalarStyle -> Tag -> T.Text -> Value
 textToValue SingleQuoted _ t = String t
@@ -240,7 +240,7 @@ parseValue me@(MarkedEvent e startMark endMark) =
             !v <- parseMapping
             defineAnchor anchor v
             return v
-        EventAlias anchor              -> lookupAlias startMark endMark anchor
+        EventAlias anchor              -> lookupAlias me anchor
         _ -> throwParserIO (UnexpectedEvent me)
 
 parseSequence :: ParserIO Value
@@ -268,13 +268,13 @@ parseMapping = Object . V.packR <$> go []
                             k@(String k') -> do
                                 defineAnchor anchor k
                                 return k'
-                            _ -> throwParserIO (NonStringKey startMark endMark v)
+                            _ -> throwParserIO (NonStringKey me)
 
                     EventAlias anchor -> do
-                        m <- lookupAlias startMark endMark anchor
+                        m <- lookupAlias me anchor
                         case m of
                             String k -> return k
-                            _ -> throwParserIO (NonStringKeyAlias startMark endMark anchor)
+                            _ -> throwParserIO (NonStringKeyAlias me)
                     e -> throwParserIO (UnexpectedEvent me)
 
                 value <- parseValue =<< pullEvent
@@ -298,7 +298,6 @@ parseMapping = Object . V.packR <$> go []
 
 -- | Write a value as a YAML document stream.
 --
--- @since 0.11.2.0
 buildSingleDocument :: HasCallStack => Sink Event -> Value -> IO ()
 buildSingleDocument sink v = do
     push sink EventStreamStart
@@ -307,9 +306,8 @@ buildSingleDocument sink v = do
     push sink EventDocumentEnd
     void $ push sink EventStreamEnd
 
--- | Write a value as a list of 'Event's(without document start\/end, stream start\/end).
+-- | Write a value as a stream of 'Event's(without document start\/end, stream start\/end).
 --
--- @since 0.11.2.0
 buildValue :: HasCallStack => Sink Event -> Value -> IO ()
 buildValue sink (Array vs) = do
     push sink (EventSequenceStart "" NoTag AnySequence)
