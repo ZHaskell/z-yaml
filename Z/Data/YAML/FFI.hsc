@@ -49,6 +49,9 @@ module Z.Data.YAML.FFI
     , pattern AnyMapping
     , pattern BlockMapping
     , pattern FlowMapping 
+    , TagRender
+    , pattern Explicit 
+    , pattern Implicit
     -- * Exception type
     , LibYAMLException (..)
     ) where
@@ -225,7 +228,6 @@ initFileParser p = do
             hs_free_yaml_parser pparser
             fclose file)
     return bio
-
 
 -- | Parse a single event from YAML parser.
 peekParserEvent :: HasCallStack => Ptr ParserStruct -> IO (Maybe MarkedEvent)
@@ -494,7 +496,6 @@ emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe
     withTag tag = CB.withCBytesUnsafe (tagToCBytes tag)
     withAnchor anchor = CB.withCBytesUnsafe (CB.fromText anchor) 
 
-
 -- | Whether a tag should be rendered explicitly in the output or left
 -- implicit.
 --
@@ -503,7 +504,7 @@ pattern Explicit, Implicit :: TagRender
 pattern Explicit = 0
 pattern Implicit = 1
 
--- | A value for 'formatOptionsRenderTags' that renders no
+-- | A value for 'yamlFormatRenderTags' that renders no
 -- collection tags but all scalar tags (unless suppressed with styles
 -- 'NoTag or 'PlainNoTag').
 --
@@ -513,13 +514,13 @@ renderScalarTags (EventSequenceStart _ _ _) = Implicit
 renderScalarTags (EventMappingStart _ _ _) = Implicit
 renderScalarTags _ = Implicit
 
--- | A value for 'formatOptionsRenderTags' that renders all
+-- | A value for 'yamlFormatRenderTags' that renders all
 -- tags (except 'NoTag' tag and 'PlainNoTag' style).
 --
 renderAllTags :: Event -> TagRender
 renderAllTags _ = Explicit
 
--- | A value for 'formatOptionsRenderTags' that renders no
+-- | A value for 'yamlFormatRenderTags' that renders no
 -- tags.
 --
 renderNoTags :: Event -> TagRender
