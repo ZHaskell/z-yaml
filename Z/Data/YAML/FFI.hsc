@@ -74,7 +74,7 @@ import Z.IO
 import qualified Z.IO.FileSystem    as FS
 import qualified Z.Data.Vector      as V
 import qualified Z.Data.Text.Base   as T
-import           Z.Data.Text.ShowT  (ShowT)
+import           Z.Data.Text.Print  (Print)
 import           Z.Data.JSON        (EncodeJSON, FromValue, ToValue)
 
 #include "yaml.h"
@@ -93,7 +93,7 @@ data Event =
     | EventMappingStart   !Anchor !Tag !MappingStyle 
     | EventMappingEnd    
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (ShowT, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
 
 data MarkedEvent = MarkedEvent 
     { markedEvent :: !Event
@@ -101,7 +101,7 @@ data MarkedEvent = MarkedEvent
     , endMark :: !Mark
     }
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (ShowT, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
 
 -- | The pointer position
 data Mark = Mark 
@@ -110,7 +110,7 @@ data Mark = Mark
     , yamlColumn :: {-# UNPACK #-} !Int 
     }
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (ShowT, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
 
 -- | Style for scalars - e.g. quoted / folded
 -- 
@@ -151,7 +151,7 @@ data Tag = StrTag
          | UriTag T.Text
          | NoTag
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (ShowT, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
 
 tagToCBytes :: Tag -> CB.CBytes
 tagToCBytes StrTag = "tag:yaml.org,2002:str"

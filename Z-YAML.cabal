@@ -1,6 +1,6 @@
 cabal-version:              >=1.10
 name:                       Z-YAML
-version:                    0.1.0.0
+version:                    0.2.0.0
 synopsis:                   YAML tools
 description:                YAML reading & writing tools for Z project.
 license:                    BSD3
@@ -28,8 +28,8 @@ library
                             , scientific            == 0.3.*
                             , transformers          == 0.5.*
                             , primitive             >= 0.5 && < 0.8
-                            , Z-Data == 0.2.*
-                            , Z-IO == 0.2.*
+                            , Z-Data == 0.3.*
+                            , Z-IO == 0.3.*
 
 
     include-dirs:           third_party/libyaml/src

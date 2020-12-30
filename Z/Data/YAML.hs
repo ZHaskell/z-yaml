@@ -66,6 +66,7 @@ import           Data.IORef
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet        as HS
 import qualified Data.Scientific as Sci
+import           Z.Data.ASCII
 import qualified Z.Data.Parser as P
 import qualified Z.Data.Vector as V
 import qualified Z.Data.Text   as T
@@ -221,8 +222,8 @@ textToScientific = P.parse' (num <* P.endOfInput) . T.getUTF8Bytes
       <|> (fromInteger <$> (P.bytes "0o" *> octal))
       <|> P.scientific
 
-    octal = V.foldl' step 0 <$> P.takeWhile1 (\ w -> w >= B.ZERO && w < B.ZERO+8)
-    step a c = (a `unsafeShiftL` 3) .|. fromIntegral (c - B.ZERO)
+    octal = V.foldl' step 0 <$> P.takeWhile1 (\ w -> w >= DIGIT_0 && w < DIGIT_0+8)
+    step a c = (a `unsafeShiftL` 3) .|. fromIntegral (c - DIGIT_0)
 
 parseValue :: MarkedEvent -> ParserIO Value
 parseValue me@(MarkedEvent e startMark endMark) =
