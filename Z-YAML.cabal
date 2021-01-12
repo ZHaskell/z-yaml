@@ -23,13 +23,13 @@ library
 
     -- other-modules:
     -- other-extensions:
-    build-depends:            base >=4.14 && <4.15
+    build-depends:            base                  == 4.*
                             , unordered-containers  == 0.2.*
                             , scientific            == 0.3.*
                             , transformers          == 0.5.*
                             , primitive             >= 0.5 && < 0.8
-                            , Z-Data == 0.3.*
-                            , Z-IO == 0.3.*
+                            , Z-Data                == 0.4.*
+                            , Z-IO                  == 0.4.*
 
 
     include-dirs:           third_party/libyaml/src

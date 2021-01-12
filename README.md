@@ -15,6 +15,7 @@ This package is part of [Z](https://github.com/haskell-Z/Z) project, provides YA
 
 import           GHC.Generics
 import qualified Z.Data.YAML as YAML
+import           Z.Data.YAML (JSON)
 import qualified Z.Data.Text as T
 
 data Person = Person
@@ -23,7 +24,7 @@ data Person = Person
     , magic :: Bool
     }
   deriving (Show, Generic)
-  deriving anyclass (YAML.FromValue, YAML.ToValue)
+  deriving anyclass JSON
 
 > YAML.decode @[Person] "- name: Erik Weisz\n  age: 52\n  magic: True\n"
 > Right [Person {name = "Erik Weisz", age = 52, magic = True}]

@@ -53,7 +53,9 @@ module Z.Data.YAML.FFI
     , pattern Explicit 
     , pattern Implicit
     -- * Exception type
-    , LibYAMLException (..)
+    , YAMLError(..)
+    , YAMLParseError(..)
+    , throwYAMLError
     ) where
 
 import Control.Applicative
@@ -75,7 +77,7 @@ import qualified Z.IO.FileSystem    as FS
 import qualified Z.Data.Vector      as V
 import qualified Z.Data.Text.Base   as T
 import           Z.Data.Text.Print  (Print)
-import           Z.Data.JSON        (EncodeJSON, FromValue, ToValue)
+import           Z.Data.JSON        (JSON)
 
 #include "yaml.h"
 
@@ -93,7 +95,7 @@ data Event =
     | EventMappingStart   !Anchor !Tag !MappingStyle 
     | EventMappingEnd    
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, JSON)
 
 data MarkedEvent = MarkedEvent 
     { markedEvent :: !Event
@@ -101,7 +103,7 @@ data MarkedEvent = MarkedEvent
     , endMark :: !Mark
     }
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, JSON)
 
 -- | The pointer position
 data Mark = Mark 
@@ -110,7 +112,7 @@ data Mark = Mark
     , yamlColumn :: {-# UNPACK #-} !Int 
     }
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, JSON)
 
 -- | Style for scalars - e.g. quoted / folded
 -- 
@@ -151,7 +153,7 @@ data Tag = StrTag
          | UriTag T.Text
          | NoTag
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, EncodeJSON, FromValue, ToValue)
+    deriving anyclass (Print, JSON)
 
 tagToCBytes :: Tag -> CB.CBytes
 tagToCBytes StrTag = "tag:yaml.org,2002:str"
@@ -177,14 +179,29 @@ bytesToTag "tag:yaml.org,2002:map" = MapTag
 bytesToTag "" = NoTag
 bytesToTag s = UriTag (T.validate s)
 
-data LibYAMLException
-    = ParseEventException CB.CBytes CB.CBytes Mark CallStack  -- ^ problem, context, mark
-    | ParseAliasEventWithEmptyAnchor Mark Mark CallStack
-    | EmitEventException Event CInt CallStack
-    | EmitAliasEventWithEmptyAnchor CallStack
+data YAMLError
+    = ParseEventException CB.CBytes CB.CBytes Mark     -- ^ problem, context, mark
+    | ParseAliasEventWithEmptyAnchor Mark Mark 
+    | ParseYAMLError YAMLParseError                    -- ^ custom parse error
+    | EmitEventException Event CInt 
+    | EmitAliasEventWithEmptyAnchor 
+    | OtherYAMLError T.Text
     deriving Show
 
-instance Exception LibYAMLException
+data YAMLParseError
+    = UnknownAlias MarkedEvent
+    | UnexpectedEvent MarkedEvent
+    | NonStringKey MarkedEvent
+    | NonStringKeyAlias MarkedEvent
+    | UnexpectedEventEnd
+  deriving Show
+
+instance Exception YAMLError
+instance Exception YAMLParseError
+
+-- | Throw custom YAML error.
+throwYAMLError :: YAMLParseError -> IO a
+throwYAMLError desc = throwIO (ParseYAMLError desc)
 
 data ParserStruct
 foreign import ccall unsafe "hs_yaml.c hs_init_yaml_parser" hs_init_yaml_parser :: IO (Ptr ParserStruct)
@@ -198,7 +215,7 @@ foreign import ccall unsafe yaml_event_delete :: MBA## EventStruct -> IO ()
 
 -- | Create a source that yields marked events from a piece of YAML bytes.
 --
-initParser :: HasCallStack => V.Bytes -> Resource (Source MarkedEvent)
+initParser :: V.Bytes -> Resource (Source MarkedEvent)
 initParser bs 
     | V.null bs = return BIO{ pull = return Nothing }
     | otherwise = do
@@ -230,7 +247,7 @@ initFileParser p = do
     return bio
 
 -- | Parse a single event from YAML parser.
-peekParserEvent :: HasCallStack => Ptr ParserStruct -> IO (Maybe MarkedEvent)
+peekParserEvent :: Ptr ParserStruct -> IO (Maybe MarkedEvent)
 peekParserEvent parser = do
     (_, me) <- allocBytesUnsafe (#size yaml_event_t) $ \ pe -> do
         res <- yaml_parser_parse parser pe
@@ -243,7 +260,7 @@ peekParserEvent parser = do
                 l :: CUInt <- (#peek yaml_parser_t, problem_mark.line) parser
                 c :: CUInt <- (#peek yaml_parser_t, problem_mark.column) parser
                 let problemMark = Mark (fromIntegral i) (fromIntegral l) (fromIntegral c)
-                throwIO (ParseEventException problem context problemMark callStack)
+                throwIO (ParseEventException problem context problemMark)
             else peekEvent pe
     return me
   where
@@ -264,7 +281,7 @@ peekParserEvent parser = do
         then return NoTag
         else bytesToTag <$!> fromNullTerminated p
 
-    peekEvent :: HasCallStack => MBA## EventStruct -> IO (Maybe MarkedEvent)
+    peekEvent :: MBA## EventStruct -> IO (Maybe MarkedEvent)
     peekEvent pe = do
         et <- peekMBA pe (#offset yaml_event_t, type)
 
@@ -286,7 +303,7 @@ peekParserEvent parser = do
             (#const YAML_ALIAS_EVENT) -> do
                 yanchor <- peekMBA pe (#offset yaml_event_t, data.alias.anchor)
                 anchor <- if yanchor == nullPtr
-                          then throwIO (ParseAliasEventWithEmptyAnchor startMark endMark callStack)
+                          then throwIO (ParseAliasEventWithEmptyAnchor startMark endMark)
                           else fromNullTerminated yanchor
                 returnMarked (EventAlias (T.Text anchor))
             (#const YAML_SCALAR_EVENT) -> do
@@ -384,7 +401,7 @@ foreign import ccall unsafe yaml_alias_event_initialize :: MBA## EventStruct -> 
 
 -- | Make a new YAML event sink, whose result can be fetched via 'getEmitterResult'.
 --
-initEmitter :: HasCallStack => YAMLFormatOpts -> Resource (Ptr EmitterStruct, Sink Event) 
+initEmitter :: YAMLFormatOpts -> Resource (Ptr EmitterStruct, Sink Event) 
 initEmitter fopts@YAMLFormatOpts{..} = do
     p <- initResource 
         (do let canonical = if yamlFormatCanonical then 1 else 0
@@ -428,7 +445,7 @@ getEmitterResult pemitter = do
 
 -- | Push a single YAML event to emitter.
 --
-emitEvent :: HasCallStack => Ptr EmitterStruct -> YAMLFormatOpts -> Event -> IO ()
+emitEvent :: Ptr EmitterStruct -> YAMLFormatOpts -> Event -> IO ()
 emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe -> do
     ret <- case e of
         EventStreamStart   -> yaml_stream_start_event_initialize pe (#const YAML_ANY_ENCODING)
@@ -475,14 +492,14 @@ emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe
 
         EventAlias anchor ->
             if T.null anchor
-            then throwIO (EmitAliasEventWithEmptyAnchor callStack)
+            then throwIO EmitAliasEventWithEmptyAnchor
             else withAnchor anchor (yaml_alias_event_initialize pe)
 
     if (ret /= 1) 
-    then throwIO (EmitEventException e ret callStack)
+    then throwIO (EmitEventException e ret)
     else do
         ret' <- yaml_emitter_emit pemitter pe
-        when (ret /= 1) (throwIO (EmitEventException e ret callStack))
+        when (ret /= 1) (throwIO (EmitEventException e ret))
   where
     tagsImplicit (EventScalar _ _ t _) | tagSuppressed t = 1
     tagsImplicit (EventMappingStart _ t _) | tagSuppressed t = 1

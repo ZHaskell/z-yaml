@@ -7,7 +7,7 @@ Maintainer  : winterland1989@gmail.com
 Stability   : experimental
 Portability : non-portable
 
-Simple YAML codec using <https://libyaml.docsforge.com/ libYAML> and JSON's 'FromValue' \/ 'ToValue' utilities.
+Simple YAML codec using <https://libyaml.docsforge.com/ libYAML> and JSON's 'JSON' utilities.
 The design choice to make things as simple as possible since YAML is a complex format, there're some limitations using this approach:
 
 * Does not support complex keys.
@@ -26,7 +26,7 @@ data Person = Person
     , magic :: Bool
     }
   deriving (Show, Generic)
-  deriving anyclass (YAML.FromValue, YAML.ToValue)
+  deriving anyclass (YAML.JSON)
 
 > YAML.decode @[Person] "- name: Erik Weisz\\n  age: 52\\n  magic: True\\n"
 > Right [Person {name = "Erik Weisz", age = 52, magic = True}]
@@ -37,120 +37,92 @@ data Person = Person
 
 module Z.Data.YAML
   ( -- * Decode and encode using YAML
-    decodeFromFile
-  , decodeValueFromFile
-  , decode
-  , decodeValue
-  , encodeToFile
-  , encodeValueToFile
+    decode
   , encode
-  , encodeValue
-  , YAMLParseException(..)
-  , YAMLParseError(..)
+  , readYAMLFile
+  , writeYAMLFile
   -- * Streaming parser and builder
   , parseSingleDoucment
   , parseAllDocuments
   , buildSingleDocument
   , buildValue
+  -- * Errors
+  , YAMLError(..)
+  , YAMLParseError(..)
+  , DecodeError
   -- * Re-Exports
-  , FromValue(..)
-  , ToValue(..)
+  , JSON(..)
   , Value(..)
   ) where
 
 import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Reader
 import           Data.Bits              ((.|.), unsafeShiftL)
 import           Data.IORef
-import qualified Data.HashMap.Strict as HM
-import qualified Data.HashSet        as HS
-import qualified Data.Scientific as Sci
+import qualified Data.HashMap.Strict    as HM
+import qualified Data.HashSet           as HS
+import qualified Data.Scientific        as Sci
+import           GHC.Generics           (Generic)
+import           System.IO.Unsafe
 import           Z.Data.ASCII
-import qualified Z.Data.Parser as P
-import qualified Z.Data.Vector as V
-import qualified Z.Data.Text   as T
-import           Z.Data.JSON            (FromValue(..), ToValue(..), Value(..), ConvertError, convert')
+import qualified Z.Data.Parser          as P
+import qualified Z.Data.Vector          as V
+import qualified Z.Data.Text            as T
+import           Z.Data.JSON            (JSON(..), Value(..), ConvertError, convertValue)
 import           Z.Data.YAML.FFI
-import           Control.Monad.Trans.Reader
-import qualified Z.Data.Vector.FlatMap as FM
-import qualified Z.Data.Builder as B
+import qualified Z.Data.Vector.FlatMap  as FM
+import qualified Z.Data.Builder         as B
 import           Z.Data.CBytes          (CBytes)
 import           Z.Data.YAML.FFI
 import           Z.IO
 
--- | Decode a 'FromValue' instance from file.
-decodeFromFile :: (HasCallStack, FromValue a) => CBytes -> IO a
-decodeFromFile p = withResource (initFileParser p) $ \ src -> do
-    r <- convert' <$> parseSingleDoucment src
-    case r of Left e -> throwIO (YAMLConvertException e callStack)
-              Right v -> return v
+type DecodeError = Either YAMLError ConvertError
 
--- | Decode a 'Value' from file.
-decodeValueFromFile :: HasCallStack => CBytes -> IO Value
-decodeValueFromFile p = withResource (initFileParser p) parseSingleDoucment
+-- | Decode a 'JSON' instance from a YAML file.
+readYAMLFile :: forall a. (HasCallStack, JSON a) => CBytes -> IO a
+readYAMLFile p = unwrap =<< withResource (initFileParser p) (\ src -> do
+    r <- try (parseSingleDoucment src)
+    case r of
+        Left (e :: YAMLError) -> return (Left (Left e))
+        Right r' -> case (convertValue r' :: Either ConvertError a) of
+            Left e' -> return (Left (Right e'))
+            Right v -> return (Right v))
 
--- | Decode a 'FromValue' instance from bytes.
-decode :: HasCallStack => FromValue a => V.Bytes -> IO a
-decode bs = withResource (initParser bs) $ \ src -> do
-    r <- convert' <$> parseSingleDoucment src
-    case r of Left e -> throwIO (YAMLConvertException e callStack)
-              Right v -> return v
+-- | Decode a 'JSON' instance from YAML bytes.
+decode :: forall a .(HasCallStack, JSON a) => V.Bytes -> Either DecodeError a
+decode bs = unsafePerformIO . withResource (initParser bs) $ \ src -> do
+    r <- try (parseSingleDoucment src)
+    case r of
+        Left e -> return (Left (Left e))
+        Right r' -> case (convertValue r' :: Either ConvertError a) of
+            Left e' -> return (Left (Right e'))
+            Right v -> return (Right v)
 
--- | Decode a 'Value' from bytes.
-decodeValue :: HasCallStack => V.Bytes -> IO Value
-decodeValue bs = withResource (initParser bs) parseSingleDoucment
-
--- | Encode a 'ToValue' instance to file.
-encodeToFile :: (HasCallStack, ToValue a) => YAMLFormatOpts -> CBytes -> a -> IO ()
-encodeToFile opts p x = withResource (initFileEmitter opts p) $ \ sink ->
+-- | Encode a 'JSON' instance to YAML file.
+writeYAMLFile :: (HasCallStack, JSON a) => YAMLFormatOpts -> CBytes -> a -> IO ()
+writeYAMLFile opts p x = withResource (initFileEmitter opts p) $ \ sink ->
     buildSingleDocument sink (toValue x)
 
--- | Encode a 'Value' to file.
-encodeValueToFile :: HasCallStack => YAMLFormatOpts -> CBytes -> Value -> IO ()
-encodeValueToFile opts p v = withResource (initFileEmitter opts p) $ \ sink ->
-    buildSingleDocument sink v
-
--- | Encode a 'ToValue' instance as UTF8 text.
-encode :: (HasCallStack, ToValue a) => YAMLFormatOpts -> a -> IO T.Text
-encode opts x = withResource (initEmitter opts) $ \ (p, sink) -> do
+-- | Encode a 'JSON' instance as UTF8 YAML text.
+encode :: (HasCallStack, JSON a) => YAMLFormatOpts -> a -> T.Text
+encode opts x = unsafePerformIO . withResource (initEmitter opts) $ \ (p, sink) -> do
     buildSingleDocument sink (toValue x)
-    getEmitterResult p
-
--- | Encode a 'Value' as UTF8 text.
-encodeValue :: HasCallStack => YAMLFormatOpts -> Value -> IO T.Text
-encodeValue opts v = withResource (initEmitter opts) $ \ (p, sink) -> do
-    buildSingleDocument sink v
     getEmitterResult p
 
 --------------------------------------------------------------------------------
 
-data YAMLParseError
-    = UnknownAlias MarkedEvent
-    | UnexpectedEvent MarkedEvent
-    | NonStringKey MarkedEvent
-    | NonStringKeyAlias MarkedEvent
-    | UnexpectedEventEnd
-  deriving (Show, Eq)
-
-instance Exception YAMLParseError
-
-data YAMLParseException
-    = YAMLParseException YAMLParseError CallStack
-    | YAMLConvertException ConvertError CallStack
-    | MultipleDocuments CallStack
-  deriving Show
-
-instance Exception YAMLParseException
-
+-- | Parse a single YAML document, throw 'OtherYAMLError' if multiple documents are met.
 parseSingleDoucment :: HasCallStack => Source MarkedEvent -> IO Value
 parseSingleDoucment src = do
     docs <- parseAllDocuments src
     case docs of
         [] -> return Null
         [doc] -> return doc
-        _ -> throwIO (MultipleDocuments callStack)
+        _ -> throwIO (OtherYAMLError "multiple YAML documents")
 
+-- | Parse all YAML documents.
 parseAllDocuments :: HasCallStack => Source MarkedEvent -> IO [Value]
 parseAllDocuments src = do
     me <- pull src
@@ -158,8 +130,8 @@ parseAllDocuments src = do
         Just (MarkedEvent EventStreamStart _ _) -> do
             as <- newIORef HM.empty
             catch (runReaderT parseDocs (src, as)) $ \ (e :: YAMLParseError) ->
-                throwIO (YAMLParseException e callStack)
-        Just me' -> throwIO (YAMLParseException (UnexpectedEvent me') callStack)
+                throwYAMLError e
+        Just me' -> throwYAMLError (UnexpectedEvent me')
         -- empty file input, comment only string/file input
         _ -> return []
   where
