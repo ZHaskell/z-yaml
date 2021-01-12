@@ -49,6 +49,7 @@ module Z.Data.YAML
   -- * Errors
   , YAMLError(..)
   , YAMLParseError(..)
+  , ConvertError(..)
   , DecodeError
   -- * Re-Exports
   , JSON(..)
