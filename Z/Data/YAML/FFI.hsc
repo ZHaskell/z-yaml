@@ -76,7 +76,7 @@ import Z.IO
 import qualified Z.IO.FileSystem    as FS
 import qualified Z.Data.Vector      as V
 import qualified Z.Data.Text.Base   as T
-import           Z.Data.Text.Print  (Print)
+import qualified Z.Data.Text        as T 
 import           Z.Data.JSON        (JSON)
 
 #include "yaml.h"
@@ -95,7 +95,7 @@ data Event =
     | EventMappingStart   !Anchor !Tag !MappingStyle 
     | EventMappingEnd    
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, JSON)
+    deriving anyclass (T.Print, JSON)
 
 data MarkedEvent = MarkedEvent 
     { markedEvent :: !Event
@@ -103,7 +103,7 @@ data MarkedEvent = MarkedEvent
     , endMark :: !Mark
     }
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, JSON)
+    deriving anyclass (T.Print, JSON)
 
 -- | The pointer position
 data Mark = Mark 
@@ -112,7 +112,7 @@ data Mark = Mark
     , yamlColumn :: {-# UNPACK #-} !Int 
     }
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, JSON)
+    deriving anyclass (T.Print, JSON)
 
 -- | Style for scalars - e.g. quoted / folded
 -- 
@@ -153,7 +153,7 @@ data Tag = StrTag
          | UriTag T.Text
          | NoTag
     deriving (Show, Ord, Eq, Generic)
-    deriving anyclass (Print, JSON)
+    deriving anyclass (T.Print, JSON)
 
 tagToCBytes :: Tag -> CB.CBytes
 tagToCBytes StrTag = "tag:yaml.org,2002:str"
@@ -186,7 +186,10 @@ data YAMLError
     | EmitEventException Event CInt 
     | EmitAliasEventWithEmptyAnchor 
     | OtherYAMLError T.Text
-    deriving Show
+  deriving (Eq, Generic)
+  deriving anyclass T.Print 
+
+instance Show YAMLError where show = T.toString
 
 data YAMLParseError
     = UnknownAlias MarkedEvent
@@ -194,10 +197,14 @@ data YAMLParseError
     | NonStringKey MarkedEvent
     | NonStringKeyAlias MarkedEvent
     | UnexpectedEventEnd
-  deriving Show
+  deriving (Eq, Generic)
+  deriving anyclass T.Print
+
+instance Show YAMLParseError where show = T.toString
 
 instance Exception YAMLError
 instance Exception YAMLParseError
+
 
 -- | Throw custom YAML error.
 throwYAMLError :: YAMLParseError -> IO a

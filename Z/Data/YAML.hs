@@ -83,7 +83,7 @@ type DecodeError = Either YAMLError ConvertError
 
 -- | Decode a 'JSON' instance from a YAML file.
 readYAMLFile :: forall a. (HasCallStack, JSON a) => CBytes -> IO a
-readYAMLFile p = unwrap =<< withResource (initFileParser p) (\ src -> do
+readYAMLFile p = unwrap "EPARSE" =<< withResource (initFileParser p) (\ src -> do
     r <- try (parseSingleDoucment src)
     case r of
         Left (e :: YAMLError) -> return (Left (Left e))
