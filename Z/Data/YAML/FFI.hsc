@@ -34,23 +34,23 @@ module Z.Data.YAML.FFI
     , renderUriTags
     -- * Constants
     , ScalarStyle
-    , pattern Any          
-    , pattern Plain        
-    , pattern SingleQuoted 
-    , pattern DoubleQuoted 
-    , pattern Literal      
-    , pattern Folded       
-    , pattern PlainNoTag   
+    , pattern Any
+    , pattern Plain
+    , pattern SingleQuoted
+    , pattern DoubleQuoted
+    , pattern Literal
+    , pattern Folded
+    , pattern PlainNoTag
     , SequenceStyle
-    , pattern AnySequence  
+    , pattern AnySequence
     , pattern BlockSequence
-    , pattern FlowSequence 
+    , pattern FlowSequence
     , MappingStyle
     , pattern AnyMapping
     , pattern BlockMapping
-    , pattern FlowMapping 
+    , pattern FlowMapping
     , TagRender
-    , pattern Explicit 
+    , pattern Explicit
     , pattern Implicit
     -- * Exception type
     , YAMLError(..)
@@ -76,7 +76,7 @@ import Z.IO
 import qualified Z.IO.FileSystem    as FS
 import qualified Z.Data.Vector      as V
 import qualified Z.Data.Text.Base   as T
-import qualified Z.Data.Text        as T 
+import qualified Z.Data.Text        as T
 import           Z.Data.JSON        (JSON)
 
 #include "yaml.h"
@@ -84,20 +84,20 @@ import           Z.Data.JSON        (JSON)
 type Anchor = T.Text
 
 data Event =
-      EventStreamStart   
-    | EventStreamEnd     
-    | EventDocumentStart 
-    | EventDocumentEnd   
+      EventStreamStart
+    | EventStreamEnd
+    | EventDocumentStart
+    | EventDocumentEnd
     | EventAlias          !Anchor
-    | EventScalar         !Anchor !T.Text !Tag !ScalarStyle 
-    | EventSequenceStart  !Anchor !Tag !SequenceStyle 
-    | EventSequenceEnd   
-    | EventMappingStart   !Anchor !Tag !MappingStyle 
-    | EventMappingEnd    
+    | EventScalar         !Anchor !T.Text !Tag !ScalarStyle
+    | EventSequenceStart  !Anchor !Tag !SequenceStyle
+    | EventSequenceEnd
+    | EventMappingStart   !Anchor !Tag !MappingStyle
+    | EventMappingEnd
     deriving (Show, Ord, Eq, Generic)
     deriving anyclass (T.Print, JSON)
 
-data MarkedEvent = MarkedEvent 
+data MarkedEvent = MarkedEvent
     { markedEvent :: !Event
     , startMark :: !Mark
     , endMark :: !Mark
@@ -106,39 +106,39 @@ data MarkedEvent = MarkedEvent
     deriving anyclass (T.Print, JSON)
 
 -- | The pointer position
-data Mark = Mark 
+data Mark = Mark
     { yamlIndex  :: {-# UNPACK #-} !Int
     , yamlLine   :: {-# UNPACK #-} !Int
-    , yamlColumn :: {-# UNPACK #-} !Int 
+    , yamlColumn :: {-# UNPACK #-} !Int
     }
     deriving (Show, Ord, Eq, Generic)
     deriving anyclass (T.Print, JSON)
 
 -- | Style for scalars - e.g. quoted / folded
--- 
+--
 type ScalarStyle = CInt
 pattern Any, Plain, SingleQuoted, DoubleQuoted, Literal, Folded, PlainNoTag :: ScalarStyle
 pattern Any           = 0
-pattern Plain         = 1 
-pattern SingleQuoted  = 2 
-pattern DoubleQuoted  = 3 
-pattern Literal       = 4 
-pattern Folded        = 5 
-pattern PlainNoTag    = 6 
+pattern Plain         = 1
+pattern SingleQuoted  = 2
+pattern DoubleQuoted  = 3
+pattern Literal       = 4
+pattern Folded        = 5
+pattern PlainNoTag    = 6
 
 -- | Style for sequences - e.g. block or flow
--- 
+--
 type SequenceStyle = CInt
 pattern AnySequence, BlockSequence, FlowSequence :: SequenceStyle
 pattern AnySequence   = 0
-pattern BlockSequence = 1 
+pattern BlockSequence = 1
 pattern FlowSequence  = 2
 
 -- | Style for mappings - e.g. block or flow
--- 
-type MappingStyle = CInt 
+--
+type MappingStyle = CInt
 pattern AnyMapping, BlockMapping, FlowMapping :: MappingStyle
-pattern AnyMapping   = 0 
+pattern AnyMapping   = 0
 pattern BlockMapping = 1
 pattern FlowMapping  = 2
 
@@ -181,13 +181,13 @@ bytesToTag s = UriTag (T.validate s)
 
 data YAMLError
     = ParseEventException CB.CBytes CB.CBytes Mark     -- ^ problem, context, mark
-    | ParseAliasEventWithEmptyAnchor Mark Mark 
+    | ParseAliasEventWithEmptyAnchor Mark Mark
     | ParseYAMLError YAMLParseError                    -- ^ custom parse error
-    | EmitEventException Event CInt 
-    | EmitAliasEventWithEmptyAnchor 
+    | EmitEventException Event CInt
+    | EmitAliasEventWithEmptyAnchor
     | OtherYAMLError T.Text
   deriving (Eq, Generic)
-  deriving anyclass T.Print 
+  deriving anyclass T.Print
 
 instance Show YAMLError where show = T.toString
 
@@ -223,10 +223,10 @@ foreign import ccall unsafe yaml_event_delete :: MBA## EventStruct -> IO ()
 -- | Create a source that yields marked events from a piece of YAML bytes.
 --
 initParser :: V.Bytes -> Resource (Source MarkedEvent)
-initParser bs 
+initParser bs
     | V.null bs = return BIO{ pull = return Nothing }
     | otherwise = do
-        (pparser, bs', bio) <- initResource 
+        (pparser, bs', bio) <- initResource
             (do pparser <- throwOOMIfNull hs_init_yaml_parser
                 bs' <- pinPrimVector bs
                 withPrimVectorSafe bs' $ \ bptr blen -> do
@@ -241,9 +241,9 @@ initParser bs
 --
 initFileParser :: HasCallStack => CB.CBytes -> Resource (Source MarkedEvent)
 initFileParser p = do
-    (pparser, file, bio) <- initResource 
+    (pparser, file, bio) <- initResource
         (do pparser <- throwOOMIfNull hs_init_yaml_parser
-            (f, _) <- acquire $ FS.initFile p FS.O_RDONLY FS.DEFAULT_MODE
+            (f, _) <- acquire $ FS.initFile p FS.O_RDONLY FS.DEFAULT_FILE_MODE
             fd <- FS.getFileFD f
             file <-   CB.withCBytesUnsafe "r" (fdopen fd)
             yaml_parser_set_input_file pparser file
@@ -273,8 +273,8 @@ peekParserEvent parser = do
   where
     readAnchor :: Int -> MBA## EventStruct -> IO Anchor
     readAnchor off pe = do
-        p <- peekMBA pe off 
-        if p == nullPtr 
+        p <- peekMBA pe off
+        if p == nullPtr
         then return T.empty
         else T.Text <$> fromNullTerminated p
 
@@ -283,8 +283,8 @@ peekParserEvent parser = do
 
     readTag :: Int -> MBA## EventStruct -> IO Tag
     readTag off pe = do
-        p <- peekMBA pe off 
-        if p == nullPtr 
+        p <- peekMBA pe off
+        if p == nullPtr
         then return NoTag
         else bytesToTag <$!> fromNullTerminated p
 
@@ -292,12 +292,12 @@ peekParserEvent parser = do
     peekEvent pe = do
         et <- peekMBA pe (#offset yaml_event_t, type)
 
-        si :: CUInt <- peekMBA pe (#offset yaml_event_t, start_mark.index) 
-        sl :: CUInt <- peekMBA pe (#offset yaml_event_t, start_mark.line) 
-        sc :: CUInt <- peekMBA pe (#offset yaml_event_t, start_mark.column) 
-        ei :: CUInt <- peekMBA pe (#offset yaml_event_t, end_mark.index) 
-        el :: CUInt <- peekMBA pe (#offset yaml_event_t, end_mark.line) 
-        ec :: CUInt <- peekMBA pe (#offset yaml_event_t, end_mark.column) 
+        si :: CUInt <- peekMBA pe (#offset yaml_event_t, start_mark.index)
+        sl :: CUInt <- peekMBA pe (#offset yaml_event_t, start_mark.line)
+        sc :: CUInt <- peekMBA pe (#offset yaml_event_t, start_mark.column)
+        ei :: CUInt <- peekMBA pe (#offset yaml_event_t, end_mark.index)
+        el :: CUInt <- peekMBA pe (#offset yaml_event_t, end_mark.line)
+        ec :: CUInt <- peekMBA pe (#offset yaml_event_t, end_mark.column)
         let startMark = Mark (fromIntegral si) (fromIntegral sl) (fromIntegral sc)
             endMark = Mark (fromIntegral ei) (fromIntegral el) (fromIntegral ec)
             returnMarked e = return (Just (MarkedEvent e startMark endMark))
@@ -408,9 +408,9 @@ foreign import ccall unsafe yaml_alias_event_initialize :: MBA## EventStruct -> 
 
 -- | Make a new YAML event sink, whose result can be fetched via 'getEmitterResult'.
 --
-initEmitter :: YAMLFormatOpts -> Resource (Ptr EmitterStruct, Sink Event) 
+initEmitter :: YAMLFormatOpts -> Resource (Ptr EmitterStruct, Sink Event)
 initEmitter fopts@YAMLFormatOpts{..} = do
-    p <- initResource 
+    p <- initResource
         (do let canonical = if yamlFormatCanonical then 1 else 0
             throwOOMIfNull (hs_init_yaml_emitter canonical
                 (fromIntegral yamlFormatIndent) (fromIntegral yamlFormatWidth)))
@@ -424,10 +424,10 @@ initEmitter fopts@YAMLFormatOpts{..} = do
 --
 -- Note the file will be opened in @'FS.O_APPEND' .|. 'FS.O_CREAT' .|. 'FS.O_WRONLY'@ mode,
 -- bytes will be written after the end of the original file if there'are old bytes.
-initFileEmitter :: HasCallStack => YAMLFormatOpts -> CB.CBytes -> Resource (Sink Event) 
+initFileEmitter :: HasCallStack => YAMLFormatOpts -> CB.CBytes -> Resource (Sink Event)
 initFileEmitter fopts@YAMLFormatOpts{..} p = do
     (pemitter, file) <- initResource
-        (do (f, _) <- acquire $ FS.initFile p (FS.O_APPEND .|. FS.O_CREAT .|. FS.O_WRONLY) FS.DEFAULT_MODE
+        (do (f, _) <- acquire $ FS.initFile p (FS.O_APPEND .|. FS.O_CREAT .|. FS.O_WRONLY) FS.DEFAULT_FILE_MODE
             fd <- FS.getFileFD f
             file <- CB.withCBytesUnsafe "w" (fdopen fd)
             let canonical = if yamlFormatCanonical then 1 else 0
@@ -444,7 +444,7 @@ initFileEmitter fopts@YAMLFormatOpts{..} p = do
 
 -- | Fetch YAML emitter's building buffer.
 --
-getEmitterResult :: Ptr EmitterStruct -> IO T.Text 
+getEmitterResult :: Ptr EmitterStruct -> IO T.Text
 getEmitterResult pemitter = do
     l <- hs_get_yaml_emitter_length pemitter
     (bs,_) <- allocBytesUnsafe (fromIntegral l) $ \ p -> hs_copy_yaml_emitter_result pemitter p l
@@ -459,9 +459,9 @@ emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe
         EventStreamEnd     -> yaml_stream_end_event_initialize pe
         EventDocumentStart -> hs_yaml_document_start pe
         EventDocumentEnd   -> yaml_document_end_event_initialize pe 1
-        EventScalar anchor t tag style0 -> 
-            withPrimVectorUnsafe (T.getUTF8Bytes t) $ \ pvalue off len -> 
-                withAnchor anchor $ \ panchor -> 
+        EventScalar anchor t tag style0 ->
+            withPrimVectorUnsafe (T.getUTF8Bytes t) $ \ pvalue off len ->
+                withAnchor anchor $ \ panchor ->
                     withTag tag $ \ ptag -> do
                         let pi0 = tagsImplicit e
                             (pi, style) = case style0 of
@@ -479,7 +479,7 @@ emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe
                             style   -- style
 
         EventSequenceStart anchor tag style ->
-            withAnchor anchor $ \ panchor -> 
+            withAnchor anchor $ \ panchor ->
                 withTag tag $ \ ptag ->
                     hs_yaml_sequence_start_event_initialize
                         pe
@@ -492,7 +492,7 @@ emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe
 
         EventMappingStart anchor tag style ->
             withAnchor anchor $ \ panchor ->
-                withTag tag $ \ ptag -> 
+                withTag tag $ \ ptag ->
                     hs_yaml_mapping_start_event_initialize pe panchor ptag (tagsImplicit e) style
 
         EventMappingEnd -> yaml_mapping_end_event_initialize pe
@@ -502,7 +502,7 @@ emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe
             then throwIO EmitAliasEventWithEmptyAnchor
             else withAnchor anchor (yaml_alias_event_initialize pe)
 
-    if (ret /= 1) 
+    if (ret /= 1)
     then throwIO (EmitEventException e ret)
     else do
         ret' <- yaml_emitter_emit pemitter pe
@@ -518,7 +518,7 @@ emitEvent pemitter fopts e = void . allocBytesUnsafe (#size yaml_event_t) $ \ pe
     tagSuppressed _ = False
 
     withTag tag = CB.withCBytesUnsafe (tagToCBytes tag)
-    withAnchor anchor = CB.withCBytesUnsafe (CB.fromText anchor) 
+    withAnchor anchor = CB.withCBytesUnsafe (CB.fromText anchor)
 
 -- | Whether a tag should be rendered explicitly in the output or left
 -- implicit.
