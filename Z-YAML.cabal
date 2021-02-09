@@ -1,21 +1,25 @@
 cabal-version:      2.2
 name:               Z-YAML
-version:            0.3.1.0
+version:            0.3.2.0
 synopsis:           YAML tools
 description:        YAML reading & writing tools for Z project.
-license:            BSD3
+license:            BSD-3-Clause
 license-file:       LICENSE
 copyright:          (c) Dong Han, 2020
 author:             Dong Han
 maintainer:         winterland1989@gmail.com
 category:           Data
-homepage:           https://github.com/haskell-Z/z-yaml
-bug-reports:        https://github.com/haskell-Z/z-yaml/issues
+homepage:           https://github.com/ZHaskell/z-yaml
+bug-reports:        https://github.com/ZHaskell/z-yaml/issues
 build-type:         Simple
 extra-source-files: CHANGELOG.md
                     third_party/libyaml/src/yaml_private.h
                     third_party/libyaml/include/yaml.h
                     test/datas/smoke.yaml
+
+source-repository head
+  type:     git
+  location: git://github.com/ZHaskell/z-yaml.git
 
 library
   exposed-modules:    Z.Data.YAML
