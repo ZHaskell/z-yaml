@@ -15,6 +15,7 @@ build-type:         Simple
 extra-source-files: CHANGELOG.md
                     third_party/libyaml/src/yaml_private.h
                     third_party/libyaml/include/yaml.h
+                    test/datas/smoke.yaml
 
 library
   exposed-modules:    Z.Data.YAML
@@ -72,3 +73,11 @@ library
                       third_party/libyaml/src/reader.c, third_party/libyaml/src/scanner.c,
                       third_party/libyaml/src/writer.c
   include-dirs:       third_party/libyaml/src, third_party/libyaml/include
+
+test-suite Z-YAML-Test
+  type:             exitcode-stdio-1.0
+  main-is:          Spec.hs
+  hs-source-dirs:   test
+  build-depends:    base, Z-Data, Z-YAML, hspec ^>= 2.7
+  default-language: Haskell2010
+  ghc-options:      -threaded
