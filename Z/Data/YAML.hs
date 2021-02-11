@@ -14,11 +14,14 @@ The design choice to make things as simple as possible since YAML is a complex f
 * Does not support multiple doucments in one file.
 
 @
-{-# LANGUAGE DeriveGeneric, DeriveAnyClass, DerivingStrategies, TypeApplication #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeApplications   #-}
 
 import           GHC.Generics
-import qualified Z.Data.YAML as YAML
-import qualified Z.Data.Text as T
+import qualified Z.Data.Text  as T
+import qualified Z.Data.YAML  as YAML
 
 data Person = Person
     { name  :: T.Text
