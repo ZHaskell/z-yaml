@@ -45,8 +45,10 @@ module Z.Data.YAML
   , readYAMLFile
   , writeYAMLFile
   -- * Streaming parser and builder
+  , initParser, initFileParser
   , parseSingleDoucment
   , parseAllDocuments
+  , initEmitter, initFileEmitter
   , buildSingleDocument
   , buildValue
   -- * Errors
@@ -118,7 +120,7 @@ encode opts x = unsafePerformIO . withResource (initEmitter opts) $ \ (p, sink) 
 --------------------------------------------------------------------------------
 
 -- | Parse a single YAML document, throw 'OtherYAMLError' if multiple documents are met.
-parseSingleDoucment :: HasCallStack => Source MarkedEvent -> IO Value
+parseSingleDoucment :: HasCallStack => IO (Maybe MarkedEvent) -> IO Value
 parseSingleDoucment src = do
     docs <- parseAllDocuments src
     case docs of
@@ -127,9 +129,9 @@ parseSingleDoucment src = do
         _ -> throwIO (OtherYAMLError "multiple YAML documents")
 
 -- | Parse all YAML documents.
-parseAllDocuments :: HasCallStack => Source MarkedEvent -> IO [Value]
+parseAllDocuments :: HasCallStack => IO (Maybe MarkedEvent) -> IO [Value]
 parseAllDocuments src = do
-    me <- pull src
+    me <- src
     case me of
         Just (MarkedEvent EventStreamStart _ _) -> do
             as <- newIORef HM.empty
@@ -152,13 +154,13 @@ parseAllDocuments src = do
                     me'' -> throwParserIO (UnexpectedEvent me'')
 
 
-type ParserIO = ReaderT (Source MarkedEvent, IORef (HM.HashMap T.Text Value)) IO
+type ParserIO = ReaderT (IO (Maybe MarkedEvent), IORef (HM.HashMap T.Text Value)) IO
 
 pullEvent :: ParserIO MarkedEvent
 pullEvent = do
     (src, _) <- ask
     liftIO $ do
-        me <- pull src
+        me <- src
         case me of Just e -> return e
                    _ -> throwIO UnexpectedEventEnd
 
@@ -274,30 +276,30 @@ parseMapping = Object . V.packR <$> go []
 
 -- | Write a value as a YAML document stream.
 --
-buildSingleDocument :: HasCallStack => Sink Event -> Value -> IO ()
+buildSingleDocument :: HasCallStack => (Event -> IO ()) -> Value -> IO ()
 buildSingleDocument sink v = do
-    push sink EventStreamStart
-    push sink EventDocumentStart
+    sink EventStreamStart
+    sink EventDocumentStart
     buildValue sink v
-    push sink EventDocumentEnd
-    void $ push sink EventStreamEnd
+    sink EventDocumentEnd
+    void $ sink EventStreamEnd
 
 -- | Write a value as a stream of 'Event's(without document start\/end, stream start\/end).
 --
-buildValue :: HasCallStack => Sink Event -> Value -> IO ()
+buildValue :: HasCallStack => (Event -> IO ()) -> Value -> IO ()
 buildValue sink (Array vs) = do
-    push sink (EventSequenceStart "" NoTag AnySequence)
+    sink (EventSequenceStart "" NoTag AnySequence)
     mapM_ (buildValue sink) (V.unpack vs)
-    void $ push sink EventSequenceEnd
+    void $ sink EventSequenceEnd
 
 buildValue sink (Object o) = do
-    push sink (EventMappingStart "" NoTag AnyMapping)
+    sink (EventMappingStart "" NoTag AnyMapping)
     mapM_ encodeKV (V.unpack o)
-    void $ push sink EventMappingEnd
+    void $ sink EventMappingEnd
   where
     encodeKV (k, v) = buildValue sink (String k) >> buildValue sink v
 
-buildValue sink (String s) = void $ push sink (EventScalar "" s NoTag (stringStyle s))
+buildValue sink (String s) = void $ sink (EventScalar "" s NoTag (stringStyle s))
   where
     stringStyle s
         | (_, Just _) <- (== '\n') `T.find` s   = Literal
@@ -309,13 +311,13 @@ buildValue sink (String s) = void $ push sink (EventScalar "" s NoTag (stringSty
         "y Y yes Yes YES n N no No NO true True TRUE false False FALSE on On ON off Off OFF null Null NULL ~ *"
     isNumeric = either (const False) (const True) . textToScientific
 
-buildValue sink Null         = void $ push sink (EventScalar "" "null" NullTag PlainNoTag)
-buildValue sink (Bool True)  = void $ push sink (EventScalar "" "true" BoolTag PlainNoTag)
-buildValue sink (Bool False) = void $ push sink (EventScalar "" "false" BoolTag PlainNoTag)
+buildValue sink Null         = void $ sink (EventScalar "" "null" NullTag PlainNoTag)
+buildValue sink (Bool True)  = void $ sink (EventScalar "" "true" BoolTag PlainNoTag)
+buildValue sink (Bool False) = void $ sink (EventScalar "" "false" BoolTag PlainNoTag)
 buildValue sink (Number s)   = do
     let builder
             -- Special case the 0 exponent to remove the trailing .0
             | Sci.base10Exponent s == 0 = B.integer $ Sci.coefficient s
             | otherwise = B.scientific s
         t = B.unsafeBuildText builder
-    void $ push sink (EventScalar "" t IntTag PlainNoTag)
+    void $ sink (EventScalar "" t IntTag PlainNoTag)

@@ -1,6 +1,6 @@
 cabal-version:      2.2
 name:               Z-YAML
-version:            0.3.2.0
+version:            0.3.3.0
 synopsis:           YAML tools
 description:        YAML reading & writing tools for Z project.
 license:            BSD-3-Clause
@@ -25,8 +25,8 @@ library
   exposed-modules:    Z.Data.YAML
                       Z.Data.YAML.FFI
   build-depends:      base                 == 4.*
-                    , Z-Data               >= 0.5 && < 1
-                    , Z-IO                 >= 0.5 && < 1
+                    , Z-Data               >= 0.8 && < 0.9
+                    , Z-IO                 >= 0.8 && < 0.9
                     , primitive            >= 0.5 && < 0.8
                     , scientific           == 0.3.*
                     , transformers         == 0.5.*

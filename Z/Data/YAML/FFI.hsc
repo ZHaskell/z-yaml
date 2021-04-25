@@ -222,16 +222,16 @@ foreign import ccall unsafe yaml_event_delete :: MBA## EventStruct -> IO ()
 
 -- | Create a source that yields marked events from a piece of YAML bytes.
 --
-initParser :: V.Bytes -> Resource (Source MarkedEvent)
+initParser :: V.Bytes -> Resource (IO (Maybe MarkedEvent))
 initParser bs
-    | V.null bs = return BIO{ pull = return Nothing }
+    | V.null bs = return (return Nothing)
     | otherwise = do
         (pparser, bs', bio) <- initResource
             (do pparser <- throwOOMIfNull hs_init_yaml_parser
                 bs' <- pinPrimVector bs
                 withPrimVectorSafe bs' $ \ bptr blen -> do
                     yaml_parser_set_input_string pparser bptr (fromIntegral blen)
-                return (pparser, bs', BIO{ pull = peekParserEvent pparser }))
+                return (pparser, bs', peekParserEvent pparser))
             (\ (pparser, bs', _) -> do
                 hs_free_yaml_parser pparser
                 touch bs')
@@ -239,7 +239,7 @@ initParser bs
 
 -- | Create a source that yields marked events from a piece of YAML bytes.
 --
-initFileParser :: HasCallStack => CB.CBytes -> Resource (Source MarkedEvent)
+initFileParser :: HasCallStack => CB.CBytes -> Resource (IO (Maybe MarkedEvent))
 initFileParser p = do
     (pparser, file, bio) <- initResource
         (do pparser <- throwOOMIfNull hs_init_yaml_parser
@@ -247,7 +247,7 @@ initFileParser p = do
             fd <- FS.getFileFD f
             file <-   CB.withCBytesUnsafe "r" (fdopen fd)
             yaml_parser_set_input_file pparser file
-            return (pparser, file, BIO{ pull = peekParserEvent pparser }))
+            return (pparser, file, peekParserEvent pparser))
         (\ (pparser, file, _) -> do
             hs_free_yaml_parser pparser
             fclose file)
@@ -408,23 +408,20 @@ foreign import ccall unsafe yaml_alias_event_initialize :: MBA## EventStruct -> 
 
 -- | Make a new YAML event sink, whose result can be fetched via 'getEmitterResult'.
 --
-initEmitter :: YAMLFormatOpts -> Resource (Ptr EmitterStruct, Sink Event)
+initEmitter :: YAMLFormatOpts -> Resource (Ptr EmitterStruct, (Event -> IO ()))
 initEmitter fopts@YAMLFormatOpts{..} = do
     p <- initResource
         (do let canonical = if yamlFormatCanonical then 1 else 0
             throwOOMIfNull (hs_init_yaml_emitter canonical
                 (fromIntegral yamlFormatIndent) (fromIntegral yamlFormatWidth)))
         hs_free_yaml_emitter
-    return (p, BIO {
-        push = \ e -> emitEvent p fopts e >> return Nothing
-    ,   pull = return Nothing
-    })
+    return (p, \ e -> emitEvent p fopts e)
 
 -- | Make a new YAML event sink, whose result are written to a file.
 --
 -- Note the file will be opened in @'FS.O_APPEND' .|. 'FS.O_CREAT' .|. 'FS.O_WRONLY'@ mode,
 -- bytes will be written after the end of the original file if there'are old bytes.
-initFileEmitter :: HasCallStack => YAMLFormatOpts -> CB.CBytes -> Resource (Sink Event)
+initFileEmitter :: HasCallStack => YAMLFormatOpts -> CB.CBytes -> Resource (Event -> IO ())
 initFileEmitter fopts@YAMLFormatOpts{..} p = do
     (pemitter, file) <- initResource
         (do (f, _) <- acquire $ FS.initFile p (FS.O_APPEND .|. FS.O_CREAT .|. FS.O_WRONLY) FS.DEFAULT_FILE_MODE
@@ -437,10 +434,7 @@ initFileEmitter fopts@YAMLFormatOpts{..} p = do
             (\ (pemitter, file) -> do
             hs_free_yaml_emitter_file pemitter
             fclose file)
-    return BIO {
-        push = \ e -> emitEvent pemitter fopts e >> return Nothing
-    ,   pull = return Nothing
-    }
+    return (\ e -> emitEvent pemitter fopts e)
 
 -- | Fetch YAML emitter's building buffer.
 --
